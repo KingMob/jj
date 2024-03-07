@@ -536,7 +536,7 @@ fn cmd_git_fetch(
     };
     let mut tx = workspace_command.start_transaction();
     for remote in &remotes {
-        let stats = with_remote_git_callbacks(ui, |cb| {
+        let stats = with_remote_git_callbacks(ui, false, |cb| {
             git::fetch(
                 tx.mut_repo(),
                 &git_repo,
@@ -759,7 +759,7 @@ fn do_git_clone(
     git_repo.remote(remote_name, source).unwrap();
     let mut fetch_tx = workspace_command.start_transaction();
 
-    let stats = with_remote_git_callbacks(ui, |cb| {
+    let stats = with_remote_git_callbacks(ui, false, |cb| {
         git::fetch(
             fetch_tx.mut_repo(),
             &git_repo,
@@ -1089,7 +1089,7 @@ fn cmd_git_push(
         branch_updates,
         force_pushed_branches,
     };
-    with_remote_git_callbacks(ui, |cb| {
+    with_remote_git_callbacks(ui, true, |cb| {
         git::push_branches(tx.mut_repo(), &git_repo, &remote, &targets, cb)
     })
     .map_err(|err| match err {

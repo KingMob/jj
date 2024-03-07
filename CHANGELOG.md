@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Commit templates now support `immutable` keyword.
 
+* `jj git push` now prints messages from the remote.
+
 ### Fixed bugs
 
 ## [0.15.1] - 2024-03-06

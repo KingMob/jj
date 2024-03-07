@@ -14,13 +14,14 @@
 
 //! Git utilities shared by various commands.
 
-use std::io::{Read, Write};
+use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::Instant;
 use std::{error, iter};
 
+use gix::bstr::ByteSlice;
 use itertools::Itertools;
 use jj_lib::git::{self, FailedRefExport, FailedRefExportReason, GitImportStats, RefName};
 use jj_lib::git_backend::GitBackend;
@@ -140,20 +141,91 @@ fn get_ssh_keys(_username: &str) -> Vec<PathBuf> {
 
 pub fn with_remote_git_callbacks<T>(
     ui: &mut Ui,
+    print_sideband_messages: bool,
     f: impl FnOnce(git::RemoteCallbacks<'_>) -> T,
 ) -> T {
+    let mut callbacks = git::RemoteCallbacks::default();
     let mut ui = Mutex::new(ui);
-    let mut callback = None;
+    let mut progress_callback = None;
     if let Some(mut output) = ui.get_mut().unwrap().progress_output() {
         let mut progress = Progress::new(Instant::now());
-        callback = Some(move |x: &git::Progress| {
+        progress_callback = Some(move |x: &git::Progress| {
             _ = progress.update(Instant::now(), x, &mut output);
         });
     }
-    let mut callbacks = git::RemoteCallbacks::default();
-    callbacks.progress = callback
+    callbacks.progress = progress_callback
         .as_mut()
         .map(|x| x as &mut dyn FnMut(&git::Progress));
+    // Based on Git's implementation: https://github.com/git/git/blob/43072b4ca132437f21975ac6acc6b72dc22fd398/sideband.c#L178
+    let mut sideband_progress_callback = None;
+    let mut scratch = Vec::new();
+    if print_sideband_messages {
+        let display_prefix = "remote: ";
+        let suffix = if std::io::stderr().is_terminal() {
+            "\x1B[K"
+        } else {
+            "        "
+        };
+        sideband_progress_callback = Some(|progress_message: &[u8]| {
+            let mut index = 0;
+            // Append a suffix to each nonempty line to clear the end of the screen line.
+            loop {
+                let Some(i) = progress_message[index..]
+                    .find_char('\n')
+                    .or_else(|| progress_message[index..].find_char('\r'))
+                    .map(|i| index + i)
+                else {
+                    break;
+                };
+                let line_length = i - index;
+
+                // For messages sent across the packet boundary, there would be a nonempty
+                // "scratch" buffer from last call of this function, and there
+                // may be a leading CR/LF in this message. For this case we should add a
+                // clear-to-eol suffix to clean leftover letters we previously
+                // have written on the same line.
+                if !scratch.is_empty() && line_length == 0 {
+                    scratch.extend_from_slice(suffix.as_bytes());
+                }
+
+                if scratch.is_empty() {
+                    scratch.extend_from_slice(display_prefix.as_bytes());
+                }
+
+                // Do not add the clear-to-eol suffix to empty lines:
+                // For progress reporting we may receive a bunch of percentage updates followed
+                // by '\r' to remain on the same line, and at the end receive a
+                // single '\n' to move to the next line. We should preserve the final
+                // status report line by not appending clear-to-eol suffix to this single line
+                // break.
+                if line_length > 0 {
+                    scratch.extend_from_slice(&progress_message[index..i]);
+                    scratch.extend_from_slice(suffix.as_bytes());
+                }
+                scratch.extend_from_slice(&progress_message[i..i + 1]);
+
+                _ = write!(
+                    ui.lock().unwrap().stderr(),
+                    "{}",
+                    String::from_utf8_lossy(&scratch)
+                );
+                scratch.clear();
+
+                index = i + 1;
+            }
+
+            // Add leftover message to "scratch" buffer to be printed in next call.
+            if index < progress_message.len() && progress_message[index] != 0 {
+                if scratch.is_empty() {
+                    scratch.extend_from_slice(display_prefix.as_bytes());
+                }
+                scratch.extend_from_slice(&progress_message[index..]);
+            }
+        });
+    }
+    callbacks.sideband_progress = sideband_progress_callback
+        .as_mut()
+        .map(|x| x as &mut dyn FnMut(&[u8]));
     let mut get_ssh_keys = get_ssh_keys; // Coerce to unit fn type
     callbacks.get_ssh_keys = Some(&mut get_ssh_keys);
     let mut get_pw = |url: &str, _username: &str| {
