@@ -415,7 +415,7 @@ impl Ui {
                 .unwrap_or(false)
     }
 
-    pub fn prompt(&mut self, prompt: &str) -> io::Result<String> {
+    pub fn prompt(&self, prompt: &str) -> io::Result<String> {
         if !Self::can_prompt() {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -486,7 +486,7 @@ impl Ui {
         Ok(choice.starts_with(['y', 'Y']))
     }
 
-    pub fn prompt_password(&mut self, prompt: &str) -> io::Result<String> {
+    pub fn prompt_password(&self, prompt: &str) -> io::Result<String> {
         if !io::stdout().is_terminal() {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,

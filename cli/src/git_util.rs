@@ -61,11 +61,11 @@ pub fn is_colocated_git_workspace(workspace: &Workspace, repo: &ReadonlyRepo) ->
     git_workdir.canonicalize().ok().as_deref() == dot_git_path.parent()
 }
 
-fn terminal_get_username(ui: &mut Ui, url: &str) -> Option<String> {
+fn terminal_get_username(ui: &Ui, url: &str) -> Option<String> {
     ui.prompt(&format!("Username for {url}")).ok()
 }
 
-fn terminal_get_pw(ui: &mut Ui, url: &str) -> Option<String> {
+fn terminal_get_pw(ui: &Ui, url: &str) -> Option<String> {
     ui.prompt_password(&format!("Passphrase for {url}: ")).ok()
 }
 
@@ -140,7 +140,7 @@ fn get_ssh_keys(_username: &str) -> Vec<PathBuf> {
 }
 
 pub fn with_remote_git_callbacks<T>(
-    ui: &mut Ui,
+    ui: &Ui,
     print_sideband_messages: bool,
     f: impl FnOnce(git::RemoteCallbacks<'_>) -> T,
 ) -> T {
@@ -158,15 +158,16 @@ pub fn with_remote_git_callbacks<T>(
         .map(|x| x as &mut dyn FnMut(&git::Progress));
     // Based on Git's implementation: https://github.com/git/git/blob/43072b4ca132437f21975ac6acc6b72dc22fd398/sideband.c#L178
     let mut sideband_progress_callback = None;
-    let mut scratch = Vec::new();
     if print_sideband_messages {
+        let ui = &ui;
+        let mut scratch = Vec::new();
         let display_prefix = "remote: ";
         let suffix = if std::io::stderr().is_terminal() {
             "\x1B[K"
         } else {
             "        "
         };
-        sideband_progress_callback = Some(|progress_message: &[u8]| {
+        sideband_progress_callback = Some(move |progress_message: &[u8]| {
             let mut index = 0;
             // Append a suffix to each nonempty line to clear the end of the screen line.
             loop {
