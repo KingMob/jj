@@ -180,7 +180,7 @@ the internal diff function.
 ```toml
 [ui]
 # Use Difftastic by default
-diff.tool = ["difft", "--color=always", "$left", "$right"]
+diff.tool = ["difft", "--color", "always", "$left", "$right"]
 # Use tool named "<name>" (see below)
 diff.tool = "<name>"
 ```
